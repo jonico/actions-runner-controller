@@ -185,7 +185,24 @@ func (r *RunnerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		}
 
 		if !pod.ObjectMeta.DeletionTimestamp.IsZero() {
-			return ctrl.Result{}, err
+			deletionTimeout := 1 * time.Minute
+			currentTime := time.Now()
+			deletionDidTimeout := pod.DeletionTimestamp.Add(deletionTimeout).Sub(currentTime) > 0
+
+			if deletionDidTimeout {
+				log.Info(
+					"Runner failed to delete itself in a timely manner "+
+						"Recreating the pod to see if it resolves the issue. "+
+						"This is typically the case when a Kubernetes node became unreachable "+
+						"and the kube contreoller started evicting nodes.",
+					"podDeletionTimestamp", pod.DeletionTimestamp,
+					"currentTime", currentTime,
+					"configuredDeletionTimeout", deletionTimeout,
+				)
+				restart = true
+			} else {
+				return ctrl.Result{}, err
+			}
 		}
 
 		if pod.Status.Phase == corev1.PodRunning {
